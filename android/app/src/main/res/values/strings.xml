@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">SMS Ledger</string>
+    <string name="permission_rationale">SMS Ledger needs to read M-Pesa and Airtel Money messages so it can sync them to your cloud dashboard. Only messages from those senders are uploaded.</string>
+</resources>

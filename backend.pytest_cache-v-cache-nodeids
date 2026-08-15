@@ -1,0 +1,21 @@
+[
+  "tests/test_api.py::test_counterparty_breakdown",
+  "tests/test_api.py::test_demo_import_and_dashboard",
+  "tests/test_api.py::test_demo_import_is_idempotent",
+  "tests/test_api.py::test_health",
+  "tests/test_api.py::test_transaction_detail_not_found",
+  "tests/test_api.py::test_transactions_listing_excludes_sms_body_field",
+  "tests/test_parsing_pipeline.py::test_ambiguous_message_excluded_from_totals",
+  "tests/test_parsing_pipeline.py::test_inserts_recognized_transaction",
+  "tests/test_parsing_pipeline.py::test_mixed_batch_statistics_add_up",
+  "tests/test_parsing_pipeline.py::test_one_malformed_message_does_not_abort_batch",
+  "tests/test_parsing_pipeline.py::test_reimporting_same_message_never_creates_duplicate",
+  "tests/test_parsing_pipeline.py::test_repeated_sync_ten_times_creates_no_duplicates",
+  "tests/test_parsing_pipeline.py::test_unsupported_sender_counted_unknown_not_dropped_silently",
+  "tests/test_sync_api.py::test_sync_is_idempotent_no_duplicates_on_repeat",
+  "tests/test_sync_api.py::test_sync_permission_denied_returns_403",
+  "tests/test_sync_api.py::test_sync_response_never_contains_sms_body",
+  "tests/test_sync_api.py::test_sync_success",
+  "tests/test_sync_api.py::test_sync_ten_times_creates_no_duplicates",
+  "tests/test_sync_api.py::test_sync_termux_api_unavailable_returns_503"
+]

@@ -1,0 +1,46 @@
+services:
+  - type: web
+    name: sms-financial-analyzer-api
+    runtime: python
+    plan: free
+
+    rootDir: backend
+
+    buildCommand: pip install -r requirements.txt
+
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+
+    healthCheckPath: /api/health
+
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: sms-financial-analyzer-db
+          property: connectionString
+
+      - key: SMS_ANALYZER_HOST
+        value: 0.0.0.0
+
+      - key: SMS_ANALYZER_CURRENCY
+        value: KES
+
+      - key: SMS_ANALYZER_DEBUG
+        value: "false"
+
+      - key: SMS_ANALYZER_JWT_ALGORITHM
+        value: HS256
+
+      - key: SMS_ANALYZER_JWT_EXPIRE_MINUTES
+        value: "10080"
+
+      - key: SMS_ANALYZER_JWT_SECRET
+        generateValue: true
+
+      # You will fill this in after Vercel gives you the frontend URL.
+      - key: SMS_ANALYZER_CORS_ORIGINS
+        sync: false
+
+databases:
+  - name: sms-financial-analyzer-db
+    plan: free
+    region: frankfurt

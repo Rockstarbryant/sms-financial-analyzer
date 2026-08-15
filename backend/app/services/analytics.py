@@ -1,0 +1,218 @@
+"""Analytics queries over stored transactions.
+
+All calculations here operate only on rows already in the transactions
+table -- rows with confidence=UNKNOWN are never inserted by the parsing
+pipeline in the first place (see services/parsing_pipeline.py), so nothing
+here needs to re-filter for that; it's structurally excluded upstream.
+"""
+from __future__ import annotations
+
+from collections import defaultdict
+
+from sqlalchemy import func
+from sqlalchemy.orm import Session
+
+from app.models.transaction import Direction, Provider, Transaction
+
+
+def _user_filter(query, user_id: int | None):
+    """Apply user scoping. None means local/demo rows (user_id IS NULL)."""
+    if user_id is not None:
+        return query.filter(Transaction.user_id == user_id)
+    return query.filter(Transaction.user_id.is_(None))
+
+
+def dashboard_summary(db: Session, user_id: int | None = None) -> dict:
+    money_in = _sum(db, Direction.IN, user_id=user_id)
+    money_out = _sum(db, Direction.OUT, user_id=user_id)
+
+    fees_q = db.query(func.coalesce(func.sum(Transaction.fee), 0.0))
+    fees_q = _user_filter(fees_q, user_id)
+    fees = fees_q.scalar() or 0.0
+
+    balance_q = (
+        db.query(Transaction.balance)
+        .filter(Transaction.balance.isnot(None))
+        .order_by(Transaction.timestamp.desc())
+    )
+    balance_q = _user_filter(balance_q, user_id)
+    latest_balance_row = balance_q.first()
+    total_balance = latest_balance_row[0] if latest_balance_row else None
+
+    providers = {}
+    for provider in Provider:
+        if provider == Provider.UNKNOWN:
+            continue
+        p_in = _sum(db, Direction.IN, provider=provider, user_id=user_id)
+        p_out = _sum(db, Direction.OUT, provider=provider, user_id=user_id)
+        p_fees_q = (
+            db.query(func.coalesce(func.sum(Transaction.fee), 0.0))
+            .filter(Transaction.provider == provider)
+        )
+        p_fees_q = _user_filter(p_fees_q, user_id)
+        p_fees = p_fees_q.scalar() or 0.0
+        providers[provider.value] = {
+            "money_in": p_in,
+            "money_out": p_out,
+            "fees": p_fees,
+            "net_flow": p_in - p_out,
+        }
+
+    return {
+        "total_balance": total_balance,
+        "money_in": money_in,
+        "money_out": money_out,
+        "fees": fees,
+        "net_cash_flow": money_in - money_out,
+        "providers": providers,
+    }
+
+
+def _sum(
+    db: Session,
+    direction: Direction,
+    provider: Provider | None = None,
+    user_id: int | None = None,
+) -> float:
+    query = db.query(func.coalesce(func.sum(Transaction.amount), 0.0)).filter(
+        Transaction.direction == direction
+    )
+    if provider is not None:
+        query = query.filter(Transaction.provider == provider)
+    query = _user_filter(query, user_id)
+    return query.scalar() or 0.0
+
+
+def category_breakdown(db: Session, user_id: int | None = None) -> list[dict]:
+    query = db.query(
+        Transaction.category,
+        Transaction.direction,
+        func.coalesce(func.sum(Transaction.amount), 0.0),
+        func.count(Transaction.id),
+    )
+    query = _user_filter(query, user_id)
+    rows = query.group_by(Transaction.category, Transaction.direction).all()
+
+    by_category: dict[str, dict] = defaultdict(lambda: {"total_in": 0.0, "total_out": 0.0, "count": 0})
+    for category, direction, total, count in rows:
+        key = by_category[category.value if hasattr(category, "value") else category]
+        if direction == Direction.IN or direction == Direction.IN.value:
+            key["total_in"] += total
+        else:
+            key["total_out"] += total
+        key["count"] += count
+
+    return [
+        {"category": category, **values}
+        for category, values in sorted(by_category.items())
+    ]
+
+
+def provider_breakdown(db: Session, user_id: int | None = None) -> list[dict]:
+    result = []
+    for provider in Provider:
+        if provider == Provider.UNKNOWN:
+            continue
+        total_in = _sum(db, Direction.IN, provider=provider, user_id=user_id)
+        total_out = _sum(db, Direction.OUT, provider=provider, user_id=user_id)
+        fees_q = (
+            db.query(func.coalesce(func.sum(Transaction.fee), 0.0))
+            .filter(Transaction.provider == provider)
+        )
+        fees_q = _user_filter(fees_q, user_id)
+        fees = fees_q.scalar() or 0.0
+        count_q = db.query(func.count(Transaction.id)).filter(Transaction.provider == provider)
+        count_q = _user_filter(count_q, user_id)
+        count = count_q.scalar() or 0
+        if count == 0:
+            continue
+        result.append(
+            {
+                "provider": provider.value,
+                "total_in": total_in,
+                "total_out": total_out,
+                "fees": fees,
+                "count": count,
+            }
+        )
+    return result
+
+
+def monthly_breakdown(db: Session, user_id: int | None = None) -> list[dict]:
+    query = db.query(
+        Transaction.timestamp, Transaction.direction, Transaction.amount, Transaction.fee
+    )
+    query = _user_filter(query, user_id)
+    rows = query.all()
+
+    by_month: dict[str, dict] = defaultdict(lambda: {"income": 0.0, "spending": 0.0, "fees": 0.0})
+    for timestamp, direction, amount, fee in rows:
+        month_key = timestamp.strftime("%Y-%m")
+        entry = by_month[month_key]
+        direction_value = direction.value if hasattr(direction, "value") else direction
+        if direction_value == Direction.IN.value:
+            entry["income"] += amount or 0.0
+        else:
+            entry["spending"] += amount or 0.0
+        entry["fees"] += fee or 0.0
+
+    return [
+        {
+            "month": month,
+            "income": values["income"],
+            "spending": values["spending"],
+            "fees": values["fees"],
+            "net": values["income"] - values["spending"],
+        }
+        for month, values in sorted(by_month.items())
+    ]
+
+
+def counterparty_breakdown(db: Session, user_id: int | None = None) -> list[dict]:
+    query = (
+        db.query(Transaction.counterparty, Transaction.direction, Transaction.amount)
+        .filter(Transaction.counterparty.isnot(None))
+    )
+    query = _user_filter(query, user_id)
+    rows = query.all()
+
+    by_counterparty: dict[str, dict] = defaultdict(
+        lambda: {"money_sent": 0.0, "money_received": 0.0, "transaction_count": 0}
+    )
+    for counterparty, direction, amount in rows:
+        entry = by_counterparty[counterparty]
+        direction_value = direction.value if hasattr(direction, "value") else direction
+        if direction_value == Direction.IN.value:
+            entry["money_received"] += amount or 0.0
+        else:
+            entry["money_sent"] += amount or 0.0
+        entry["transaction_count"] += 1
+
+    return [
+        {
+            "counterparty": counterparty,
+            **values,
+            "net_flow": values["money_received"] - values["money_sent"],
+        }
+        for counterparty, values in sorted(by_counterparty.items())
+    ]
+
+
+def counterparty_detail(db: Session, name: str, user_id: int | None = None) -> dict | None:
+    query = db.query(Transaction).filter(Transaction.counterparty == name)
+    query = _user_filter(query, user_id)
+    transactions = query.order_by(Transaction.timestamp.desc()).all()
+    if not transactions:
+        return None
+
+    money_sent = sum(t.amount or 0.0 for t in transactions if t.direction == Direction.OUT)
+    money_received = sum(t.amount or 0.0 for t in transactions if t.direction == Direction.IN)
+
+    return {
+        "counterparty": name,
+        "money_sent": money_sent,
+        "money_received": money_received,
+        "transaction_count": len(transactions),
+        "net_flow": money_received - money_sent,
+        "transactions": transactions,
+    }
