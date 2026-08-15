@@ -149,15 +149,17 @@ export function DashboardPage() {
   }
   if (!dashboard.data) return null;
 
-  const items = transactions.data?.items ?? [];
+const dashboardData = dashboard.data;
+
+const items = transactions.data?.items ?? [];
   const agg = aggregateFromTransactions(items);
   const usePeriodTotals = period !== "all" && !transactions.loading;
 
-  const moneyIn = usePeriodTotals ? agg.moneyIn : dashboard.data.money_in;
-  const moneyOut = usePeriodTotals ? agg.moneyOut : dashboard.data.money_out;
-  const net = usePeriodTotals ? agg.net : dashboard.data.net_cash_flow;
-  const fees = usePeriodTotals ? agg.fees : dashboard.data.fees;
-  const balance = period === "all" ? dashboard.data.total_balance : null;
+  const moneyIn = usePeriodTotals ? agg.moneyIn : dashboardData.money_in;
+const moneyOut = usePeriodTotals ? agg.moneyOut : dashboardData.money_out;
+const net = usePeriodTotals ? agg.net : dashboardData.net_cash_flow;
+const fees = usePeriodTotals ? agg.fees : dashboardData.fees;
+const balance = period === "all" ? dashboardData.total_balance : null;
 
   const providerOrder = ["mpesa", "airtel_money"] as const;
 
@@ -200,7 +202,7 @@ export function DashboardPage() {
         <SectionTitle>By provider</SectionTitle>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           {providerOrder.map((provider) => {
-            const fromDash = dashboard.data.providers[provider];
+            const fromDash = dashboardData.providers[provider];
             const fromAgg = agg.byProvider[provider];
             const summary = usePeriodTotals
               ? fromAgg
