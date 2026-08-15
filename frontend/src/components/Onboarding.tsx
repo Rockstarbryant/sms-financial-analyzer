@@ -25,6 +25,7 @@ export function Onboarding({ onImported }: OnboardingProps) {
       setResult(
         `Imported ${stats.inserted} transactions from ${stats.scanned} messages (${stats.duplicates} already there, ${stats.unknown} unrecognized).`,
       );
+      // Small delay so the user sees the success line, then enter the app
       onImported();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Import failed.");
@@ -41,7 +42,7 @@ export function Onboarding({ onImported }: OnboardingProps) {
         </p>
         <p className="mt-3 text-sm leading-relaxed text-ink-soft">
           {isAuthenticated
-            ? "Import demo data to explore the dashboard, or sync real SMS from the Android companion app."
+            ? "Import demo data to explore, or sync SMS from this phone (Termux). The Android companion app is for production cloud sync."
             : "This app can run fully locally, or you can sign in to use the cloud dashboard with the Android companion app."}
         </p>
 
@@ -59,15 +60,13 @@ export function Onboarding({ onImported }: OnboardingProps) {
           </>
         )}
 
-        {!isAuthenticated && (
-          <button
-            onClick={() => run("sync")}
-            disabled={loadingMode !== null}
-            className="mt-4 w-full rounded-full border border-line bg-paper-raised px-4 py-3 text-sm font-medium text-ink transition-opacity active:opacity-80 disabled:opacity-50"
-          >
-            {loadingMode === "sync" ? "Syncing…" : "Sync my SMS (Termux)"}
-          </button>
-        )}
+        <button
+          onClick={() => run("sync")}
+          disabled={loadingMode !== null}
+          className="mt-4 w-full rounded-full border border-line bg-paper-raised px-4 py-3 text-sm font-medium text-ink transition-opacity active:opacity-80 disabled:opacity-50"
+        >
+          {loadingMode === "sync" ? "Syncing…" : "Sync my SMS (Termux)"}
+        </button>
 
         <div className="mt-4 rounded-xl bg-paper px-4 py-3 text-left text-xs text-ink-soft">
           <p className="font-medium text-ink">Or try sample data first</p>
@@ -91,6 +90,16 @@ export function Onboarding({ onImported }: OnboardingProps) {
 
       <p className="max-w-xs text-xs text-ink-faint">
         You can sync SMS or import demo data again any time from Settings.
+        {isAuthenticated && (
+          <>
+            {" "}
+            Or{" "}
+            <Link to="/" className="underline">
+              continue without importing
+            </Link>{" "}
+            after sign-out from Settings if you only want local data.
+          </>
+        )}
       </p>
     </div>
   );
