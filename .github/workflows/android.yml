@@ -1,0 +1,55 @@
+name: Build Android APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      api_base_url:
+        description: "Backend API base URL (no trailing slash)"
+        required: true
+        default: "https://sms-financial-analyzer.onrender.com"
+  push:
+    branches: [main]
+    paths:
+      - "android/**"
+      - ".github/workflows/android.yml"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+
+      - name: Generate Gradle Wrapper
+        working-directory: android
+        run: |
+          gradle wrapper --gradle-version 8.9
+          chmod +x gradlew
+
+      - name: Build debug APK
+        working-directory: android
+        env:
+          API_BASE_URL: ${{ github.event.inputs.api_base_url || 'https://sms-financial-analyzer-api.onrender.com' }}
+        run: |
+          ./gradlew assembleDebug --no-daemon -PAPI_BASE_URL="$API_BASE_URL"
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sms-analyzer-debug-apk
+          path: android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
