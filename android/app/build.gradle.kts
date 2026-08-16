@@ -15,15 +15,19 @@ android {
         versionCode = 1
         versionName = "0.1.0"
 
-        // Override in local.properties or BuildConfig for production:
-        // API base URL of your cloud backend
-        buildConfigField("String", "API_BASE_URL", "\"https://api.example.com\"")
+        // Override at build time:
+        //   ./gradlew assembleDebug -PAPI_BASE_URL=https://your-api.onrender.com
+        // or env API_BASE_URL=...
+        val apiBaseUrl = (project.findProperty("API_BASE_URL") as String?)
+            ?: System.getenv("API_BASE_URL")
+            ?: "https://sms-financial-analyzer.onrender.com"
+        buildConfigField("String", "API_BASE_URL", "\"$apiBaseUrl\"")
     }
 
     buildTypes {
         debug {
-            // Point at local backend when developing on emulator (10.0.2.2 = host loopback)
-            buildConfigField("String", "API_BASE_URL", "\"http://10.0.2.2:8000\"")
+            // Keep same cloud URL by default so phone APKs work without a PC emulator
+            isMinifyEnabled = false
         }
         release {
             isMinifyEnabled = true
@@ -59,7 +63,6 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
     implementation("androidx.navigation:navigation-compose:2.8.4")
 
-    // Networking
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
     implementation("com.squareup.retrofit2:retrofit:2.11.0")
@@ -67,11 +70,9 @@ dependencies {
     implementation("com.squareup.moshi:moshi-kotlin:1.15.1")
     implementation("org.jetbrains.kotlin:kotlin-reflect")
 
-    // Secure token storage
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
     implementation("androidx.datastore:datastore-preferences:1.1.1")
 
-    // Background sync
     implementation("androidx.work:work-runtime-ktx:2.10.0")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
