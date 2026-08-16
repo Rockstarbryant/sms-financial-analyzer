@@ -36,7 +36,7 @@ def list_transactions(
     start_date: str | None = None,
     end_date: str | None = None,
     search: str | None = None,
-    limit: int = Query(50, ge=1, le=500),
+    limit: int = Query(50, ge=1, le=2000),
     offset: int = Query(0, ge=0),
 ) -> TransactionListResponse:
     query = _base_query(db, current_user)

@@ -11,7 +11,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import analytics, auth, cloud_sync, demo, health, sync, transactions
+from app.api import analytics, auth, cloud_sync, demo, health, statements, sync, transactions
 from app.config import settings
 from app.database import init_db
 
@@ -52,6 +52,7 @@ app.add_middleware(
 app.include_router(health.router)
 app.include_router(auth.router)
 app.include_router(demo.router)
+app.include_router(statements.router)
 app.include_router(sync.router)          # local Termux sync (no auth)
 app.include_router(cloud_sync.router)    # cloud companion-app sync (JWT required)
 app.include_router(transactions.router)

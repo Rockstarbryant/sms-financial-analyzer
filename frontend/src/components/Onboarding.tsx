@@ -7,30 +7,40 @@ interface OnboardingProps {
   onImported: () => void;
 }
 
-type Mode = "demo" | "sync";
+type ProviderChoice = "mpesa" | "airtel_money";
 
 export function Onboarding({ onImported }: OnboardingProps) {
   const { isAuthenticated } = useAuth();
-  const [loadingMode, setLoadingMode] = useState<Mode | null>(null);
+  const [provider, setProvider] = useState<ProviderChoice>("mpesa");
+  const [password, setPassword] = useState("");
+  const [file, setFile] = useState<File | null>(null);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<string | null>(null);
 
-  async function run(mode: Mode) {
-    setLoadingMode(mode);
+  async function handleUpload(e: React.FormEvent) {
+    e.preventDefault();
+    if (!file) {
+      setError("Choose a PDF statement file first.");
+      return;
+    }
+    setLoading(true);
     setError(null);
     setResult(null);
     try {
-      const stats =
-        mode === "demo" ? await api.importDemoData() : await api.syncSms();
-      setResult(
-        `Imported ${stats.inserted} transactions from ${stats.scanned} messages (${stats.duplicates} already there, ${stats.unknown} unrecognized).`,
+      const stats = await api.uploadStatement(
+        file,
+        provider,
+        password.trim() || undefined,
       );
-      // Small delay so the user sees the success line, then enter the app
+      setResult(
+        `Imported ${stats.inserted} of ${stats.scanned} rows (${stats.duplicates} already stored).`,
+      );
       onImported();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Import failed.");
+      setError(err instanceof ApiError ? err.message : "Upload failed.");
     } finally {
-      setLoadingMode(null);
+      setLoading(false);
     }
   }
 
@@ -38,68 +48,102 @@ export function Onboarding({ onImported }: OnboardingProps) {
     <div className="flex min-h-[70dvh] flex-col items-center justify-center px-2 text-center">
       <div className="receipt-card mb-8 w-full max-w-sm px-6 py-8">
         <p className="font-display text-xl font-semibold text-ink">
-          {isAuthenticated ? "Your cloud ledger" : "Your ledger, on your device"}
+          {isAuthenticated ? "Your cloud ledger" : "Your ledger"}
         </p>
         <p className="mt-3 text-sm leading-relaxed text-ink-soft">
-          {isAuthenticated
-            ? "Import demo data to explore, or sync SMS from this phone (Termux). The Android companion app is for production cloud sync."
-            : "This app can run fully locally, or you can sign in to use the cloud dashboard with the Android companion app."}
+          Upload an <strong>M-Pesa</strong> or <strong>Airtel Money</strong>{" "}
+          PDF statement. SMS is not required — statements are the source of
+          truth when you upload them.
         </p>
 
         {!isAuthenticated && (
-          <>
-            <Link
-              to="/login"
-              className="mt-6 block w-full rounded-full bg-mpesa px-4 py-3 text-sm font-semibold text-white transition-opacity active:opacity-80"
-            >
-              Sign in / Create account
-            </Link>
-            <p className="mt-3 text-xs text-ink-faint">
-              Best for non-technical use — pair with the Android app for SMS.
-            </p>
-          </>
+          <Link
+            to="/login"
+            className="mt-5 block w-full rounded-full bg-mpesa px-4 py-3 text-sm font-semibold text-white transition-opacity active:opacity-80"
+          >
+            Sign in / Create account
+          </Link>
         )}
 
-        <button
-          onClick={() => run("sync")}
-          disabled={loadingMode !== null}
-          className="mt-4 w-full rounded-full border border-line bg-paper-raised px-4 py-3 text-sm font-medium text-ink transition-opacity active:opacity-80 disabled:opacity-50"
-        >
-          {loadingMode === "sync" ? "Syncing…" : "Sync my SMS (Termux)"}
-        </button>
+        <form onSubmit={handleUpload} className="mt-5 space-y-3 text-left">
+          <div>
+            <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-ink-faint">
+              Provider
+            </p>
+            <div className="flex gap-2">
+              {(
+                [
+                  ["mpesa", "M-Pesa"],
+                  ["airtel_money", "Airtel Money"],
+                ] as const
+              ).map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setProvider(id)}
+                  className={`flex-1 rounded-full px-3 py-2 text-xs font-medium ${
+                    provider === id
+                      ? id === "mpesa"
+                        ? "bg-mpesa text-white"
+                        : "bg-airtel text-white"
+                      : "border border-line bg-paper-raised text-ink-soft"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
 
-        <div className="mt-4 rounded-xl bg-paper px-4 py-3 text-left text-xs text-ink-soft">
-          <p className="font-medium text-ink">Or try sample data first</p>
-          <p className="mt-1">
-            See how the dashboard, transactions, and analytics work using
-            synthetic M-Pesa and Airtel Money messages — no SMS permission
-            needed.
-          </p>
+          <div>
+            <label className="mb-1.5 block text-[11px] font-medium uppercase tracking-wide text-ink-faint">
+              Statement PDF
+            </label>
+            <input
+              type="file"
+              accept="application/pdf,.pdf"
+              onChange={(ev) => setFile(ev.target.files?.[0] ?? null)}
+              className="block w-full text-xs text-ink file:mr-3 file:rounded-full file:border-0 file:bg-paper file:px-3 file:py-2 file:text-xs file:font-medium file:text-ink"
+            />
+          </div>
+
+          <div>
+            <label className="mb-1.5 block text-[11px] font-medium uppercase tracking-wide text-ink-faint">
+              PDF password {provider === "mpesa" ? "(required for most M-Pesa files)" : "(if any)"}
+            </label>
+            <input
+              type="password"
+              value={password}
+              onChange={(ev) => setPassword(ev.target.value)}
+              placeholder={
+                provider === "mpesa"
+                  ? "ID number or SMS access code"
+                  : "Leave blank if unlocked"
+              }
+              className="w-full rounded-xl border border-line bg-paper-raised px-3 py-2.5 text-sm text-ink outline-none focus:border-mpesa"
+              autoComplete="off"
+            />
+            <p className="mt-1 text-[10px] text-ink-faint">
+              M-Pesa: usually your national ID, or the code Safaricom texts you.
+            </p>
+          </div>
+
           <button
-            onClick={() => run("demo")}
-            disabled={loadingMode !== null}
-            className="mt-3 w-full rounded-full border border-line bg-paper-raised px-4 py-2 text-sm font-medium text-ink active:opacity-80 disabled:opacity-50"
+            type="submit"
+            disabled={loading || !file}
+            className="w-full rounded-full bg-mpesa px-4 py-3 text-sm font-semibold text-white transition-opacity active:opacity-80 disabled:opacity-50"
           >
-            {loadingMode === "demo" ? "Importing…" : "Import demo data"}
+            {loading ? "Parsing statement…" : "Upload & import"}
           </button>
-        </div>
+        </form>
 
         {result && <p className="mt-4 text-xs text-mpesa">{result}</p>}
         {error && <p className="mt-4 text-xs text-airtel">{error}</p>}
       </div>
 
       <p className="max-w-xs text-xs text-ink-faint">
-        You can sync SMS or import demo data again any time from Settings.
-        {isAuthenticated && (
-          <>
-            {" "}
-            Or{" "}
-            <Link to="/" className="underline">
-              continue without importing
-            </Link>{" "}
-            after sign-out from Settings if you only want local data.
-          </>
-        )}
+        You can upload both M-Pesa and Airtel statements (one at a time). Re-upload
+        is safe — duplicates are skipped. Manage more uploads anytime in Settings.
       </p>
     </div>
   );

@@ -168,48 +168,118 @@ def monthly_breakdown(db: Session, user_id: int | None = None) -> list[dict]:
     ]
 
 
+def _norm_phone(phone: str | None) -> str | None:
+    if not phone:
+        return None
+    digits = "".join(c for c in phone if c.isdigit())
+    if len(digits) == 12 and digits.startswith("254"):
+        digits = "0" + digits[3:]
+    if len(digits) == 9 and digits.startswith("7"):
+        digits = "0" + digits
+    if len(digits) == 10 and digits.startswith("0"):
+        return digits
+    return None
+
+
+def _norm_name(name: str | None) -> str:
+    if not name:
+        return ""
+    return " ".join(name.strip().split()).title()
+
+
 def counterparty_breakdown(db: Session, user_id: int | None = None) -> list[dict]:
-    query = (
-        db.query(Transaction.counterparty, Transaction.direction, Transaction.amount)
-        .filter(Transaction.counterparty.isnot(None))
-    )
+    """Group people by phone when available, else by normalized name.
+
+    Prevents duplicate rows like "BRIAN OUMA" and "0797***326 brian ouma".
+    """
+    query = db.query(
+        Transaction.counterparty,
+        Transaction.counterparty_phone,
+        Transaction.direction,
+        Transaction.amount,
+    ).filter(Transaction.counterparty.isnot(None))
     query = _user_filter(query, user_id)
     rows = query.all()
 
-    by_counterparty: dict[str, dict] = defaultdict(
-        lambda: {"money_sent": 0.0, "money_received": 0.0, "transaction_count": 0}
-    )
-    for counterparty, direction, amount in rows:
-        entry = by_counterparty[counterparty]
+    # key -> aggregates + display name candidates
+    by_key: dict[str, dict] = {}
+    for counterparty, phone, direction, amount in rows:
+        phone_n = _norm_phone(phone)
+        name_n = _norm_name(counterparty)
+        key = f"p:{phone_n}" if phone_n else f"n:{name_n.lower()}"
+        entry = by_key.get(key)
+        if entry is None:
+            entry = {
+                "money_sent": 0.0,
+                "money_received": 0.0,
+                "transaction_count": 0,
+                "names": {},
+                "phone": phone_n,
+            }
+            by_key[key] = entry
         direction_value = direction.value if hasattr(direction, "value") else direction
         if direction_value == Direction.IN.value:
             entry["money_received"] += amount or 0.0
         else:
             entry["money_sent"] += amount or 0.0
         entry["transaction_count"] += 1
+        if name_n:
+            entry["names"][name_n] = entry["names"].get(name_n, 0) + 1
 
-    return [
-        {
-            "counterparty": counterparty,
-            **values,
-            "net_flow": values["money_received"] - values["money_sent"],
-        }
-        for counterparty, values in sorted(by_counterparty.items())
-    ]
+    results = []
+    for values in by_key.values():
+        # Prefer real name over pure phone display
+        names = values["names"]
+        if names:
+            display = max(names.items(), key=lambda x: (x[1], len(x[0])))[0]
+        else:
+            display = values["phone"] or "Unknown"
+        if values["phone"] and not display.startswith("0"):
+            # keep name; phone used only for merge key
+            pass
+        results.append(
+            {
+                "counterparty": display,
+                "money_sent": values["money_sent"],
+                "money_received": values["money_received"],
+                "transaction_count": values["transaction_count"],
+                "net_flow": values["money_received"] - values["money_sent"],
+            }
+        )
+    return sorted(results, key=lambda r: r["counterparty"])
 
 
 def counterparty_detail(db: Session, name: str, user_id: int | None = None) -> dict | None:
-    query = db.query(Transaction).filter(Transaction.counterparty == name)
+    # Match exact name or same normalized name / related phone rows
+    name_n = _norm_name(name)
+    query = db.query(Transaction).filter(Transaction.counterparty.isnot(None))
     query = _user_filter(query, user_id)
-    transactions = query.order_by(Transaction.timestamp.desc()).all()
+    all_rows = query.order_by(Transaction.timestamp.desc()).all()
+    transactions = [
+        t
+        for t in all_rows
+        if _norm_name(t.counterparty) == name_n
+        or (t.counterparty and t.counterparty.strip() == name.strip())
+    ]
+    # If still empty, try phone-based merge: any txn whose phone matches phones of this name
     if not transactions:
         return None
+
+    phones = {_norm_phone(t.counterparty_phone) for t in transactions}
+    phones.discard(None)
+    if phones:
+        transactions = [
+            t
+            for t in all_rows
+            if _norm_name(t.counterparty) == name_n
+            or _norm_phone(t.counterparty_phone) in phones
+        ]
 
     money_sent = sum(t.amount or 0.0 for t in transactions if t.direction == Direction.OUT)
     money_received = sum(t.amount or 0.0 for t in transactions if t.direction == Direction.IN)
 
     return {
-        "counterparty": name,
+        "counterparty": name_n or name,
         "money_sent": money_sent,
         "money_received": money_received,
         "transaction_count": len(transactions),

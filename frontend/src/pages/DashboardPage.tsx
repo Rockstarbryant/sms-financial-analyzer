@@ -131,7 +131,7 @@ export function DashboardPage() {
   const transactions = useApiData(
     () =>
       api.listTransactions({
-        limit: 500,
+        limit: 2000,
         start_date: range.start,
         end_date: range.end,
       }),

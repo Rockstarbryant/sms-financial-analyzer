@@ -102,7 +102,30 @@ export const api = {
   me: () => request<User>("/api/auth/me"),
 
   // Data
-  importDemoData: () =>
+  uploadStatement: async (file: File, provider: "mpesa" | "airtel_money", password?: string) => {
+    const form = new FormData();
+    form.append("file", file);
+    form.append("provider", provider);
+    if (password) form.append("password", password);
+    const headers: Record<string, string> = {};
+    const token = getToken();
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+    const res = await fetch(`${BASE_URL}/api/statements/upload`, {
+      method: "POST",
+      headers,
+      body: form,
+    });
+    if (!res.ok) {
+      let message = res.statusText || "Upload failed";
+      try {
+        const body = await res.json();
+        if (body?.detail) message = typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail);
+      } catch { /* ignore */ }
+      throw new ApiError(message, res.status);
+    }
+    return res.json() as Promise<DemoImportResponse>;
+  },
+    importDemoData: () =>
     request<DemoImportResponse>("/api/demo/import", { method: "POST" }),
 
   syncSms: () => request<DemoImportResponse>("/api/sync", { method: "POST" }),
